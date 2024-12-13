@@ -7,6 +7,8 @@ from modules.project_manager import ProjectManager
 from modules.chat_manager import ChatManager
 from modules.file_manager import FileManager
 import json
+import subprocess
+import shlex
 
 # Load environment variables
 load_dotenv()
@@ -22,7 +24,8 @@ class GemiCoder:
         self.project_manager = ProjectManager()
         self.chat_manager = ChatManager()
         self.file_manager = FileManager(model)
-        self.persistent_files = {}  # Armazenar arquivos por projeto
+        self.persistent_files = {}
+        self.base_dir = os.path.dirname(os.path.abspath(__file__))  # GemiCoder base directory
         
     def get_project_structure(self, project_dir):
         """Retorna uma lista com todos os caminhos de arquivos no projeto"""
@@ -40,9 +43,9 @@ class GemiCoder:
         
         return sorted(file_paths)
 
-    def start_project_chat(self, project, project_dir, model):
+    def start_project_chat(self, project, project_dir, model, system_prompt):
         # Criar diretório de chats se não existir
-        chats_dir = "chats"
+        chats_dir = os.path.join(self.base_dir, "chats")
         if not os.path.exists(chats_dir):
             os.makedirs(chats_dir)
         
@@ -66,19 +69,6 @@ class GemiCoder:
         
         # Garantir que temos um histórico inicial
         if not saved_history:
-            # Mensagem inicial para contextualizar a IA
-            system_prompt = f"""You are managing the project '{project}' in directory '{project_dir}'.
-            You can create, edit, read, move and delete files, and run terminal commands.
-            Always respond with a JSON array of actions when asked to modify the project.
-            Example action format:
-            [
-                {{
-                    "action_type": "create",
-                    "path": "src/main.py",
-                    "content": "print('Hello World')",
-                    "description": "Create main.py file with hello world code"
-                }}
-            ]"""
             saved_history = [{
                 "parts": [{"text": system_prompt}],
                 "role": "user"
@@ -90,13 +80,11 @@ class GemiCoder:
             try:
                 if isinstance(msg, dict):
                     if 'content' in msg:
-                        # Converter formato antigo para novo
                         chat_history.append({
                             "parts": [{"text": msg['content']}],
                             "role": msg['role']
                         })
                     elif 'parts' in msg and 'role' in msg:
-                        # Já está no formato correto
                         chat_history.append(msg)
             except Exception as e:
                 console.print(f"[yellow]Error processing chat message: {str(e)}[/yellow]")
@@ -289,7 +277,7 @@ Analyze the project based on the query, considering both structure and file cont
         
         while True:
             # Opção inicial
-            projects_dir = "projects"
+            projects_dir = os.path.join(self.base_dir, "projects")
             if not os.path.exists(projects_dir):
                 os.makedirs(projects_dir)
             
@@ -315,113 +303,147 @@ Analyze the project based on the query, considering both structure and file cont
                 if project_name in projects:
                     console.print("[red]Project already exists![/red]")
                     continue
-                os.makedirs(os.path.join(projects_dir, project_name))
+                project_dir = os.path.join(projects_dir, project_name)
+                os.makedirs(project_dir)
                 project = project_name
             else:  # open
                 project = Prompt.ask("Select project", choices=projects)
-                
+            
             project_dir = os.path.join(projects_dir, project)
+            
+            # Store current directory to restore later
+            original_dir = os.getcwd()
+            # Change to project directory for terminal commands
+            os.chdir(project_dir)
             
             console.print(f"\n[bold green]Working on project: {project}[/bold green]")
             console.print("Type your request in natural language or 'exit' to quit")
+            console.print("You can ask me to run terminal commands!")
             
-            # Iniciar chat do projeto
-            chat, chat_file = self.start_project_chat(project, project_dir, model)
+            # Update system prompt to inform about terminal capabilities
+            system_prompt = f"""You are managing the project '{project}' in directory '{project_dir}'.
+            You can create, edit, read, move and delete files.
+            You can also execute terminal commands in the project directory using the 'terminal' action type.
+            When asked to perform terminal operations, respond with appropriate terminal action.
             
-            while True:
-                # Mostrar arquivos persistentes antes de cada prompt
-                self.show_persistent_files(project)
-                
-                prompt = Prompt.ask("\nWhat would you like me to do?")
-                
-                if prompt.lower() == 'exit':
-                    break
-                
-                if prompt.startswith('/'):
-                    if self.process_custom_command(prompt, project_dir, chat, project):
-                        continue
-                
-                try:
-                    # Adicionar conteúdo dos arquivos persistentes ao prompt
-                    files_content = ""
-                    if project in self.persistent_files:
-                        for file_path, content in self.persistent_files[project].items():
-                            files_content += f"\nFile: {file_path}\n```\n{content}\n```\n"
+            Always respond with a JSON array of actions when asked to modify the project.
+            Example action format:
+            [
+                {{
+                    "action_type": "create",
+                    "path": "src/main.py",
+                    "content": "print('Hello World')",
+                    "description": "Create main.py file with hello world code"
+                }},
+                {{
+                    "action_type": "terminal",
+                    "content": "npm install express",
+                    "description": "Install Express.js dependency"
+                }}
+            ]"""
+            
+            # Iniciar chat do projeto com novo system prompt
+            chat, chat_file = self.start_project_chat(project, project_dir, model, system_prompt)
+            
+            try:
+                while True:
+                    # Mostrar arquivos persistentes antes de cada prompt
+                    self.show_persistent_files(project)
                     
-                    if files_content:
-                        full_prompt = f"""Active files in context:
+                    prompt = Prompt.ask("\nWhat would you like me to do?")
+                    
+                    if prompt.lower() == 'exit':
+                        break
+                    
+                    if prompt.startswith('/'):
+                        if self.process_custom_command(prompt, project_dir, chat, project):
+                            continue
+                    
+                    try:
+                        # Adicionar conteúdo dos arquivos persistentes ao prompt
+                        files_content = ""
+                        if project in self.persistent_files:
+                            for file_path, content in self.persistent_files[project].items():
+                                files_content += f"\nFile: {file_path}\n```\n{content}\n```\n"
+                        
+                        if files_content:
+                            full_prompt = f"""Active files in context:
 {files_content}
 
 User request: {prompt}"""
-                    else:
-                        full_prompt = prompt
-                    
-                    # Enviar prompt para o chat
-                    response = chat.send_message(full_prompt)
-                    text = response.text.strip()
-                    
-                    # Procurar por JSON na resposta
-                    start = text.find('[')
-                    end = text.rfind(']') + 1
-                    
-                    if start == -1 or end == 0:
-                        console.print("\n[bold]AI Response:[/bold]")
-                        console.print(text)
-                        continue
-                    
-                    actions = json.loads(text[start:end])
-                    
-                    # Corrigir: Não duplicar o caminho do projeto
-                    for action in actions:
-                        if 'path' in action:
-                            # Verificar se o caminho já inclui o diretório do projeto
-                            if not action['path'].startswith(project_dir):
-                                action['path'] = os.path.join(project_dir, action['path'])
-                        if action['action_type'] == 'move':
-                            if not action['content'].startswith(project_dir):
-                                action['content'] = os.path.join(project_dir, action['content'])
-                    
-                    # Mostrar e confirmar ações
-                    console.print("\n[bold]Proposed actions:[/bold]")
-                    for action in actions:
-                        console.print(f"\n- {action['description']}")
-                        if action['action_type'] == 'terminal':
-                            console.print(f"  Command: {action['content']}")
-                    
-                    if Prompt.ask("\nProceed with these actions?", choices=["y", "n"]) == "y":
+                        else:
+                            full_prompt = prompt
+                        
+                        # Enviar prompt para o chat
+                        response = chat.send_message(full_prompt)
+                        text = response.text.strip()
+                        
+                        # Procurar por JSON na resposta
+                        start = text.find('[')
+                        end = text.rfind(']') + 1
+                        
+                        if start == -1 or end == 0:
+                            console.print("\n[bold]AI Response:[/bold]")
+                            console.print(text)
+                            continue
+                        
+                        actions = json.loads(text[start:end])
+                        
+                        # Corrigir: Não duplicar o caminho do projeto
                         for action in actions:
-                            self.execute_action(action, chat)
-                            # Se for uma ação de leitura, esperar por instruções adicionais
-                            if action['action_type'] == 'read':
-                                next_step = Prompt.ask("\nWhat would you like to do next?")
-                                if next_step.lower() != 'exit':
-                                    response = chat.send_message(next_step)
-                                    text = response.text.strip()
-                                    
-                                    # Procurar por novas ações no formato JSON
-                                    start = text.find('[')
-                                    end = text.rfind(']') + 1
-                                    
-                                    if start != -1 and end != 0:
-                                        new_actions = json.loads(text[start:end])
-                                        console.print("\n[bold]Additional actions proposed:[/bold]")
-                                        for new_action in new_actions:
-                                            console.print(f"\n- {new_action['description']}")
-                                            if new_action['action_type'] == 'terminal':
-                                                console.print(f"  Command: {new_action['content']}")
+                            if 'path' in action:
+                                # Verificar se o caminho já inclui o diretório do projeto
+                                if not action['path'].startswith(project_dir):
+                                    action['path'] = os.path.join(project_dir, action['path'])
+                            if action['action_type'] == 'move':
+                                if not action['content'].startswith(project_dir):
+                                    action['content'] = os.path.join(project_dir, action['content'])
+                        
+                        # Mostrar e confirmar ações
+                        console.print("\n[bold]Proposed actions:[/bold]")
+                        for action in actions:
+                            console.print(f"\n- {action['description']}")
+                            if action['action_type'] == 'terminal':
+                                console.print(f"  Command: {action['content']}")
+                        
+                        if Prompt.ask("\nProceed with these actions?", choices=["y", "n"]) == "y":
+                            for action in actions:
+                                self.execute_action(action, chat)
+                                # Se for uma ação de leitura, esperar por instruções adicionais
+                                if action['action_type'] == 'read':
+                                    next_step = Prompt.ask("\nWhat would you like to do next?")
+                                    if next_step.lower() != 'exit':
+                                        response = chat.send_message(next_step)
+                                        text = response.text.strip()
                                         
-                                        if Prompt.ask("\nProceed with these actions?", choices=["y", "n"]) == "y":
+                                        # Procurar por novas ações no formato JSON
+                                        start = text.find('[')
+                                        end = text.rfind(']') + 1
+                                        
+                                        if start != -1 and end != 0:
+                                            new_actions = json.loads(text[start:end])
+                                            console.print("\n[bold]Additional actions proposed:[/bold]")
                                             for new_action in new_actions:
-                                                self.execute_action(new_action, chat)
-                                    else:
-                                        console.print("\n[bold]AI Response:[/bold]")
-                                        console.print(text)
+                                                console.print(f"\n- {new_action['description']}")
+                                                if new_action['action_type'] == 'terminal':
+                                                    console.print(f"  Command: {new_action['content']}")
+                                            
+                                            if Prompt.ask("\nProceed with these actions?", choices=["y", "n"]) == "y":
+                                                for new_action in new_actions:
+                                                    self.execute_action(new_action, chat)
+                                        else:
+                                            console.print("\n[bold]AI Response:[/bold]")
+                                            console.print(text)
+                        
+                        # Salvar histórico do chat
+                        self.save_chat_history(chat, chat_file)
                     
-                    # Salvar histórico do chat
-                    self.save_chat_history(chat, chat_file)
-                
-                except Exception as e:
-                    console.print(f"[red]Error: {str(e)}[/red]")
+                    except Exception as e:
+                        console.print(f"[red]Error: {str(e)}[/red]")
+            
+            finally:
+                # Restore original directory when exiting project
+                os.chdir(original_dir)
     
     def execute_action(self, action, chat):
         try:
@@ -443,7 +465,10 @@ User request: {prompt}"""
                     
             elif action['action_type'] == 'terminal':
                 if Prompt.ask(f"Run command: {action['content']}?", choices=["y", "n"]) == "y":
-                    os.system(action['content'])
+                    try:
+                        os.system(action['content'])
+                    except Exception as e:
+                        console.print(f"[red]Error executing command: {str(e)}[/red]")
                     
         except Exception as e:
             console.print(f"[red]Error executing action: {str(e)}[/red]")
