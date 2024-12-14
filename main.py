@@ -269,52 +269,175 @@ Analyze the project based on the query, considering both structure and file cont
             return True
         
         elif command.startswith('/is-web'):
-            web_prompt = """From now on, when creating web projects or features, always:
+            web_prompt = """From now on, when creating web projects or features, you should:
 
-1. Use modern and beautiful UI/UX practices:
+1. Be proactive and creative with features:
+   - When user requests are not specific, expand them with modern features
+   - Add complementary functionality that enhances user experience
+   - Think about the full user journey and add necessary supporting features
+   - Include admin/management interfaces when appropriate
+   - Add analytics and monitoring capabilities
+   - Implement smart defaults and best practices
+
+2. Create comprehensive solutions:
+   - Full authentication system with roles and permissions
+   - User profiles and settings
+   - Dashboard with relevant metrics
+   - Search and filter capabilities
+   - Export/import functionality
+   - Notification systems
+   - Error tracking and logging
+   - API documentation when relevant
+
+3. Implement modern UI libraries and assets:
+   - Use Tailwind CSS for utility-first styling
+   - Implement Material UI or Chakra UI components
+   - Include icon libraries (Phosphor, Lucide, or Material Icons)
+   - Use Framer Motion for smooth animations
+   - Implement ShadcnUI for beautiful components
+   - Use modern fonts (Inter, Roboto, etc.)
+   - Include hero patterns or SVG backgrounds
+   - Use gradients and glass morphism effects
+   - Implement skeleton loaders from libraries
+   - Use chart libraries (Chart.js, D3.js)
+   - Include image optimization (next/image)
+
+4. Create beautiful and creative layouts:
+   - Use modern grid systems with auto-fit/auto-fill
+   - Implement masonry layouts when appropriate
+   - Create card-based designs with hover effects
+   - Use sticky headers and navigation
+   - Implement parallax scrolling effects
+   - Add floating action buttons (FAB)
+   - Create multi-level navigation menus
+   - Use breadcrumbs for deep navigation
+   - Implement sidebar navigation with collapsible sections
+   - Add quick action toolbars
+   - Create tabbed interfaces
+   - Use accordions for content organization
+   - Implement floating labels in forms
+   - Add progress indicators
+   - Create step wizards for complex forms
+
+5. Focus on modern UI/UX patterns:
    - Clean and professional layouts
    - Smooth animations and transitions
-   - Intuitive user interactions
+   - Micro-interactions and feedback
+   - Loading states and skeletons
+   - Toast notifications with icons
+   - Modal dialogs with animations
+   - Drag and drop interfaces
+   - Infinite scroll with loading indicators
    - Modern color schemes and typography
-   - Proper spacing and visual hierarchy
+   - Dark/light theme with system preference
+   - Custom scrollbars
+   - Hover tooltips and popovers
+   - Context menus
+   - File upload with preview
+   - Image cropping/editing
 
-2. Implement full responsiveness:
+6. Implement complete responsiveness:
    - Mobile-first approach
    - Fluid layouts and grids
-   - Responsive images and media
    - Touch-friendly interactions
+   - Responsive images and media
+   - Adaptive navigation (hamburger menus)
    - Breakpoints for all devices
+   - Print styles when relevant
+   - Responsive typography
+   - Collapsible sections on mobile
+   - Bottom navigation for mobile
+   - Swipe gestures
 
-3. Use modern technologies and best practices:
-   - Latest CSS features (Grid, Flexbox, Custom Properties)
-   - Modern JavaScript/TypeScript
-   - Popular frameworks when appropriate (React, Vue, etc.)
-   - CSS animations and transitions
-   - Performance optimization
+7. Add advanced features automatically:
+   - Real-time updates with WebSocket
+   - Offline support with Service Workers
+   - Form validation with error messages
+   - Auto-save functionality
+   - Rate limiting and throttling
+   - Caching strategies
+   - Image optimization and lazy loading
+   - SEO optimization
+   - Social sharing with preview cards
+   - Keyboard shortcuts
+   - Voice commands when appropriate
+   - Screen reader support
+   - Multi-language support
+   - Cookie consent
+   - GDPR compliance
 
-4. Include essential features automatically:
-   - Loading states and animations
-   - Error handling and user feedback
-   - Form validation
-   - Accessibility features
-   - Cross-browser compatibility
+8. Include security and performance:
+   - CSRF protection
+   - XSS prevention
+   - Input sanitization
+   - Rate limiting
+   - Password policies
+   - Session management
+   - Performance monitoring
+   - Load time optimization
+   - Asset compression
+   - Image optimization
+   - Code splitting
+   - Bundle optimization
 
-5. Suggest and implement required backend/infrastructure:
-   - API requirements and structure
-   - Database schemas
-   - Authentication if needed
-   - Performance considerations
-   - Security best practices
+9. Consider full infrastructure:
+   - Database design with indexes
+   - API architecture and endpoints
+   - Caching layers
+   - CDN configuration
+   - Deployment scripts
+   - CI/CD pipelines
+   - Backup strategies
+   - Monitoring setup
+   - Error tracking
+   - Analytics integration
 
-Always create a complete, production-ready solution that looks and works beautifully.
-When implementing features, automatically include all necessary UI enhancements and user experience improvements.
+10. Add developer experience features:
+    - Comprehensive documentation
+    - API testing suite
+    - Development environment setup
+    - Debug logging
+    - Error tracking
+    - Performance monitoring
+    - Code formatting and linting
+    - Git hooks and workflows
+    - Component storybook
+    - E2E testing
+    - Unit testing
+    - Integration testing
+
+When user requests are not detailed, proactively add these features and create beautiful interfaces using modern UI libraries and components.
+Always aim to create production-ready, scalable solutions with modern best practices and stunning visuals.
+
+For example, if user asks for "Create a blog":
+- Use Tailwind CSS with custom theme
+- Implement Material UI components
+- Add Phosphor icons throughout
+- Create animated page transitions
+- Add floating action buttons
+- Implement masonry grid for posts
+- Create beautiful cards with hover effects
+- Add skeleton loaders
+- Include dark/light mode toggle
+- Create responsive navigation
+- Add search with autocomplete
+- Implement tag cloud with animations
+- Create beautiful author profiles
+- Add reading progress indicator
+- Implement social sharing buttons
+- Create newsletter subscription form
+- Add related posts carousel
+- Implement comment system with reactions
+- Create category navigation
+- Add beautiful 404 page
+etc.
 
 Respond with a confirmation if you understand these requirements."""
 
             try:
                 response = chat.send_message(web_prompt)
                 console.print("\n[bold green]Enhanced web development mode enabled![/bold green]")
-                console.print("The AI will now create beautiful and responsive web interfaces automatically.")
+                console.print("The AI will now create comprehensive web solutions with beautiful UI and advanced features automatically.")
                 return True
             except Exception as e:
                 console.print(f"[red]Error enabling web mode: {str(e)}[/red]")
