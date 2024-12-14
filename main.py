@@ -7,16 +7,21 @@ from modules.project_manager import ProjectManager
 from modules.chat_manager import ChatManager
 from modules.file_manager import FileManager
 import json
-import requests
-from PIL import Image
-from io import BytesIO
 
 # Load environment variables
 load_dotenv()
 
 # Configure Gemini AI
 genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
-model = genai.GenerativeModel('gemini-2.0-flash-exp')
+model = genai.GenerativeModel(
+    'gemini-2.0-flash-exp',
+    generation_config=genai.GenerationConfig(
+        max_output_tokens=8192,
+        temperature=0.9,
+        top_p=1,
+        top_k=1
+    )
+)
 
 console = Console()
 
@@ -31,9 +36,40 @@ class GemiCoder:
     def get_project_structure(self, project_dir):
         """Retorna uma lista com todos os caminhos de arquivos no projeto"""
         file_paths = []
+        
+        # Lista de diretórios a serem ignorados
+        ignored_dirs = {
+            '__pycache__',
+            'venv',
+            'env',
+            'node_modules',
+            '.git',
+            '.idea',
+            '.vscode',
+            'build',
+            'dist',
+            'site-packages',
+            'egg-info',
+            '.pytest_cache',
+            '.mypy_cache',
+            '.tox',
+            'coverage',
+            'htmlcov',
+            '.coverage',
+            'vendor',
+            'bower_components',
+            'jspm_packages',
+            'lib',
+            'libs',
+            'bin',
+            'obj',
+            'target',
+            'out'
+        }
+        
         for root, dirs, files in os.walk(project_dir):
-            # Ignorar diretórios ocultos e __pycache__
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__']
+            # Filtrar diretórios ignorados e ocultos
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ignored_dirs]
             
             for file in files:
                 if not file.startswith('.'):
@@ -227,6 +263,36 @@ class GemiCoder:
                 console.print(f"[red]Folder not found: {folder_path}[/red]")
                 return True
             
+            # Lista de diretórios a serem ignorados
+            ignored_dirs = {
+                '__pycache__',
+                'venv',
+                'env',
+                'node_modules',
+                '.git',
+                '.idea',
+                '.vscode',
+                'build',
+                'dist',
+                'site-packages',
+                'egg-info',
+                '.pytest_cache',
+                '.mypy_cache',
+                '.tox',
+                'coverage',
+                'htmlcov',
+                '.coverage',
+                'vendor',
+                'bower_components',
+                'jspm_packages',
+                'lib',
+                'libs',
+                'bin',
+                'obj',
+                'target',
+                'out'
+            }
+            
             # Extensões de arquivo que são consideradas texto
             text_extensions = {
                 '.txt', '.py', '.js', '.html', '.css', '.json', '.md', '.yml', 
@@ -241,21 +307,25 @@ class GemiCoder:
             
             files_added = 0
             
-            # Listar apenas arquivos no diretório especificado (sem subdiretórios)
-            for file in os.listdir(full_folder_path):
-                file_path = os.path.join(full_folder_path, file)
-                if os.path.isfile(file_path):
-                    # Verificar se é arquivo de texto
-                    if os.path.splitext(file)[1].lower() in text_extensions:
-                        try:
-                            with open(file_path, 'r', encoding='utf-8') as f:
-                                content = f.read()
-                                # Usar caminho relativo ao projeto
-                                rel_path = os.path.relpath(file_path, project_dir)
-                                self.persistent_files[project][rel_path] = content
-                                files_added += 1
-                        except Exception as e:
-                            console.print(f"[yellow]Could not read {file}: {str(e)}[/yellow]")
+            # Listar arquivos no diretório e subdiretórios, ignorando pastas específicas
+            for root, dirs, files in os.walk(full_folder_path):
+                # Filtrar diretórios ignorados
+                dirs[:] = [d for d in dirs if not d.startswith('.') and d not in ignored_dirs]
+                
+                for file in files:
+                    if not file.startswith('.'):
+                        file_path = os.path.join(root, file)
+                        # Verificar se é arquivo de texto
+                        if os.path.splitext(file)[1].lower() in text_extensions:
+                            try:
+                                with open(file_path, 'r', encoding='utf-8') as f:
+                                    content = f.read()
+                                    # Usar caminho relativo ao projeto
+                                    rel_path = os.path.relpath(file_path, project_dir)
+                                    self.persistent_files[project][rel_path] = content
+                                    files_added += 1
+                            except Exception as e:
+                                console.print(f"[yellow]Could not read {file}: {str(e)}[/yellow]")
             
             if files_added > 0:
                 console.print(f"[green]Added {files_added} files from {folder_path or '.'} to persistent files[/green]")
@@ -541,114 +611,56 @@ Respond with a confirmation if you understand these requirements."""
                 return True
         
         elif command.startswith('/add-image'):
-            image_path = command[10:].strip()
+            image_path = command[11:].strip()
             if not image_path:
                 console.print("[red]Please provide the image path[/red]")
                 return True
                 
             try:
-                # Handle relative paths from current directory
+                # Converter path relativo para absoluto se necessário
                 if not os.path.isabs(image_path):
-                    # Try relative to current directory first
-                    full_path = os.path.abspath(image_path)
-                    if not os.path.exists(full_path):
-                        # If not found, try relative to project directory
-                        full_path = os.path.join(project_dir, image_path)
-                else:
-                    full_path = image_path
+                    image_path = os.path.join(project_dir, image_path)
                 
-                if not os.path.exists(full_path):
+                if not os.path.exists(image_path):
                     console.print(f"[red]Image not found: {image_path}[/red]")
                     return True
                 
-                console.print("[bold blue]Reading and analyzing local image...[/bold blue]")
+                if not image_path.lower().endswith('.png'):
+                    console.print("[red]Only PNG images are supported[/red]")
+                    return True
                 
-                # Try to open and encode the image
+                console.print("[bold blue]Reading image...[/bold blue]")
+                
                 try:
-                    with open(full_path, 'rb') as img_file:
+                    with open(image_path, 'rb') as img_file:
                         image_bytes = img_file.read()
                         import base64
                         image_base64 = base64.b64encode(image_bytes).decode('utf-8')
                         
-                        # Create the content parts with proper structure
-                        content = [
-                            {
-                                "role": "user",
-                                "parts": [
-                                    {
-                                        "inline_data": {
-                                            "mime_type": "image/png",
-                                            "data": image_base64
-                                        }
-                                    },
-                                    {
-                                        "text": """Please analyze this image and describe its visual aspects in detail:
-                                        1. Overall layout and composition
-                                        2. Color scheme and visual style
-                                        3. UI elements and their arrangement (if applicable)
-                                        4. Typography and text styling
-                                        5. Visual patterns and design elements
-                                        6. Spacing and proportions
-                                        7. Any notable animations or interactive elements suggested by the design
-                                        
-                                        Focus on the visual design aspects that could be referenced in development.
-                                        Be detailed but organized in your analysis."""
+                        # Criar prompt com a imagem
+                        image_prompt = {
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "inline_data": {
+                                        "mime_type": "image/png",
+                                        "data": image_base64
                                     }
-                                ]
-                            }
-                        ]
+                                }
+                            ]
+                        }
+                        
+                        # Adicionar imagem ao histórico do chat
+                        chat.history.append(image_prompt)
+                        console.print("[green]Image added to context. Your next prompt will include the image analysis.[/green]")
+                        console.print("[dim]The image will be removed from context after your next prompt.[/dim]")
+                        
                 except Exception as e:
                     console.print(f"[red]Error reading image: {str(e)}[/red]")
                     return True
                 
-                # Get image analysis with retry
-                max_retries = 3
-                for attempt in range(max_retries):
-                    try:
-                        analysis = model.generate_content(content)
-                        image_description = analysis.text
-                        break
-                    except Exception as e:
-                        if attempt < max_retries - 1:
-                            console.print(f"[yellow]Retry {attempt + 1}/{max_retries}: Analysis failed, retrying...[/yellow]")
-                            continue
-                        console.print(f"[red]Error analyzing image after {max_retries} attempts: {str(e)}[/red]")
-                        return True
-                
-                console.print("\n[bold]Visual Analysis:[/bold]")
-                console.print(image_description)
-                
-                # Ask user for implementation details
-                console.print("\n[bold blue]What would you like to implement based on this design? (Type your request or 'skip' to continue)[/bold blue]")
-                console.print("[dim]Example: Create a landing page with similar layout and colors[/dim]")
-                user_prompt = Prompt.ask("Your implementation request")
-                
-                if user_prompt.lower() != 'skip':
-                    # Send both image description and user prompt to chat
-                    full_prompt = f"""Visual Reference:
-{image_description}
-
-Implementation Request: {user_prompt}
-
-Based on the visual reference above and the implementation request, please:
-1. Create a detailed plan for implementation
-2. Follow the visual style from the reference
-3. Include all necessary files and code
-4. Add appropriate animations and interactions
-5. Ensure responsive design
-
-Respond with actions to create the implementation."""
-                    
-                    try:
-                        response = chat.send_message(full_prompt)
-                        console.print("\n[bold]Implementation Plan:[/bold]")
-                        console.print(response.text)
-                    except Exception as e:
-                        console.print(f"[red]Error processing request: {str(e)}[/red]")
-                
             except Exception as e:
-                console.print(f"[red]Unexpected error: {str(e)}[/red]")
-            
+                console.print(f"[red]Error processing image: {str(e)}[/red]")
             return True
         
         elif command.startswith('/add-local-image'):
@@ -813,16 +825,22 @@ Respond with actions to create the implementation."""
                         import shutil
                         shutil.rmtree(project_dir)
                         
-                        # Delete associated chat history
-                        chat_file = os.path.join(self.base_dir, "chats", f"chat_{project}.json")
-                        if os.path.exists(chat_file):
-                            os.remove(chat_file)
+                        # Delete project chats directory
+                        chats_project_dir = os.path.join(self.base_dir, "chats", project)
+                        if os.path.exists(chats_project_dir):
+                            shutil.rmtree(chats_project_dir)
+                            console.print(f"[yellow]Removed project chat history[/yellow]")
+                        
+                        # Delete legacy chat file if exists (backwards compatibility)
+                        legacy_chat_file = os.path.join(self.base_dir, "chats", f"chat_{project}.json")
+                        if os.path.exists(legacy_chat_file):
+                            os.remove(legacy_chat_file)
                             
                         # Remove from persistent files if exists
                         if project in self.persistent_files:
                             del self.persistent_files[project]
                             
-                        console.print(f"[green]Project '{project}' deleted successfully[/green]")
+                        console.print(f"[green]Project '{project}' and all associated data deleted successfully[/green]")
                         continue
                     except Exception as e:
                         console.print(f"[red]Error deleting project: {str(e)}[/red]")
@@ -916,6 +934,17 @@ User request: {prompt}"""
                         
                         # Enviar prompt para o chat
                         response = chat.send_message(full_prompt)
+                        
+                        # Remover imagem do histórico após o prompt se existir
+                        if chat.history and len(chat.history) >= 2:
+                            previous_msg = chat.history[-2]  # Mensagem anterior à resposta atual
+                            if (hasattr(previous_msg, 'parts') and 
+                                len(previous_msg.parts) > 0 and 
+                                hasattr(previous_msg.parts[0], 'inline_data')):
+                                # Remover a mensagem com a imagem
+                                chat.history.pop(-2)
+                                console.print("[dim]Image removed from context[/dim]")
+                        
                         text = response.text.strip()
                         
                         # Procurar por JSON na resposta
@@ -1006,7 +1035,40 @@ User request: {prompt}"""
             elif action['action_type'] == 'terminal':
                 if Prompt.ask(f"Run command: {action['content']}?", choices=["y", "n"]) == "y":
                     try:
-                        os.system(action['content'])
+                        import signal
+                        
+                        console.print("[bold blue]Executing command... (Press CTRL+C to stop)[/bold blue]")
+                        
+                        try:
+                            # Executar comando usando os.system
+                            exit_code = os.system(action['content'])
+                            
+                            if exit_code != 0:
+                                console.print(f"\n[red]Command failed with exit code: {exit_code}[/red]")
+                            
+                        except KeyboardInterrupt:
+                            console.print("\n[yellow]Command interrupted by user[/yellow]")
+                            # Em sistemas Unix, enviar SIGINT para o grupo de processo
+                            if os.name != 'nt':
+                                os.kill(0, signal.SIGINT)
+                        
+                        # Análise opcional do resultado
+                        if Prompt.ask("\nAnalyze command result?", choices=["y", "n"]) == "y":
+                            try:
+                                analysis_prompt = f"""Command: {action['content']}
+Exit code: {exit_code if 'exit_code' in locals() else 'interrupted'}
+
+Please provide a brief analysis:
+1. Success/failure status
+2. Suggested next steps"""
+
+                                response = chat.send_message(analysis_prompt)
+                                console.print("\n[bold]Analysis:[/bold]")
+                                console.print(response.text)
+                                
+                            except Exception as e:
+                                console.print(f"[yellow]Could not analyze result: {str(e)}[/yellow]")
+                    
                     except Exception as e:
                         console.print(f"[red]Error executing command: {str(e)}[/red]")
                     
@@ -1028,4 +1090,4 @@ User request: {prompt}"""
 
 if __name__ == "__main__":
     app = GemiCoder()
-    app.main_menu() 
+    app.main_menu()
