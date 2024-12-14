@@ -734,6 +734,8 @@ Respond with actions to create the implementation."""
             You can also execute terminal commands in the project directory using the 'terminal' action type.
             When asked to perform terminal operations, respond with appropriate terminal action.
             
+            IMPORTANT: Always use 'edit' action_type when modifying existing files, never 'create' for files that already exist.
+            
             Always respond with a JSON array of actions when asked to modify the project.
             Example action format:
             [
@@ -742,6 +744,12 @@ Respond with actions to create the implementation."""
                     "path": "src/main.py",
                     "content": "print('Hello World')",
                     "description": "Create main.py file with hello world code"
+                }},
+                {{
+                    "action_type": "edit",
+                    "path": "src/main.py",
+                    "content": "def hello():\\n    print('Hello World')",
+                    "description": "Modify main.py to use a function"
                 }},
                 {{
                     "action_type": "terminal",
