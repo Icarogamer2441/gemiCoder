@@ -54,7 +54,11 @@ python main.py
 - `/remove-file path` - Remove file from active context
 - `/is-web` - Enable enhanced web development mode
 - `/add-image path` - Add and analyze local PNG image (supports relative/absolute paths)
-- `/exit` - Exit current project
+- `/new-chat name` - Create a new chat session
+- `/open-chat name` - Open an existing chat session
+- `/chat-list` - List all available chats
+- `/remove-chat name` - Remove a chat session (cannot remove default chat)
+- `/exit` - Exit current project or chat
 
 4. Examples:
 ```bash
@@ -76,13 +80,19 @@ python main.py
 # Enable beautiful web UI generation
 /is-web
 
+# Manage multiple chat sessions
+/new-chat feature-auth  # Create new chat for auth feature
+/open-chat feature-ui   # Switch to UI development chat
+/chat-list             # See all available chats
+/remove-chat old-chat  # Remove a chat session
+
 # Analyze image from local path
 # Note: Only PNG images are supported
 /add-image ../designs/mockup.png    # Relative path
 /add-image C:/designs/reference.png # Absolute path
 
-# Exit current project
-/exit
+# Exit current project or chat
+exit
 ```
 
 5. Natural language commands:

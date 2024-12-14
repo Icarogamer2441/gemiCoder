@@ -44,14 +44,14 @@ class GemiCoder:
         
         return sorted(file_paths)
 
-    def start_project_chat(self, project, project_dir, model, system_prompt):
+    def start_project_chat(self, project, project_dir, model, system_prompt, chat_name="main"):
         # Criar diretório de chats se não existir
-        chats_dir = os.path.join(self.base_dir, "chats")
+        chats_dir = os.path.join(self.base_dir, "chats", project)
         if not os.path.exists(chats_dir):
             os.makedirs(chats_dir)
         
-        # Nome do arquivo de chat baseado no projeto
-        chat_file = os.path.join(chats_dir, f"chat_{project}.json")
+        # Nome do arquivo de chat baseado no projeto e nome do chat
+        chat_file = os.path.join(chats_dir, f"{chat_name}.json")
         
         # Carregar ou iniciar histórico
         try:
@@ -105,7 +105,11 @@ class GemiCoder:
 /add-folder [path] - Add all files from folder (current dir if no path)
 /remove-file path - Remove file from active context
 /is-web         - Enable enhanced web development mode
-/add-image path - Add and analyze local image (supports relative/absolute paths)
+/add-image path - Add and analyze local PNG image
+/new-chat name  - Create a new chat session
+/open-chat name - Open an existing chat session
+/remove-chat name - Remove a chat session
+/chat-list      - List all available chats
 /exit           - Exit current project
 
 [bold]Examples:[/bold]
@@ -114,9 +118,102 @@ class GemiCoder:
 /add-folder src/utils
 /remove-file config.json
 /is-web         # Enable beautiful web UI generation
-/add-image ../designs/mockup.png
-/add-image C:/Users/MyUser/Desktop/reference.jpg
+/add-image designs/mockup.png
+/new-chat feature-auth
+/open-chat feature-ui
+/remove-chat old-feature
 """)
+            return True
+            
+        elif command.startswith('/new-chat'):
+            chat_name = command[10:].strip()
+            if not chat_name:
+                console.print("[red]Please provide a chat name[/red]")
+                return True
+                
+            # Verificar se o chat já existe
+            chats_dir = os.path.join(self.base_dir, "chats", project)
+            if not os.path.exists(chats_dir):
+                os.makedirs(chats_dir)
+                
+            chat_file = os.path.join(chats_dir, f"{chat_name}.json")
+            
+            if os.path.exists(chat_file):
+                console.print(f"[red]Chat '{chat_name}' already exists[/red]")
+                return True
+            
+            # Criar arquivo de chat vazio
+            try:
+                with open(chat_file, 'w', encoding='utf-8') as f:
+                    json.dump([], f)
+                console.print(f"[green]Created new chat: {chat_name}[/green]")
+            except Exception as e:
+                console.print(f"[red]Error creating chat: {str(e)}[/red]")
+            return True
+            
+        elif command.startswith('/open-chat'):
+            chat_name = command[11:].strip()
+            if not chat_name:
+                console.print("[red]Please provide a chat name[/red]")
+                return True
+                
+            # Verificar se o chat existe
+            chats_dir = os.path.join(self.base_dir, "chats", project)
+            chat_file = os.path.join(chats_dir, f"{chat_name}.json")
+            
+            if not os.path.exists(chat_file):
+                console.print(f"[red]Chat '{chat_name}' not found[/red]")
+                return True
+            
+            # Get current system prompt from main chat
+            current_system_prompt = chat.history[0].parts[0].text
+            
+            # Abrir chat existente
+            chat, chat_file = self.start_project_chat(project, project_dir, model, current_system_prompt, chat_name)
+            console.print(f"[green]Opened chat: {chat_name}[/green]")
+            return True
+            
+        elif command.startswith('/chat-list'):
+            # Checar tanto o diretório do projeto quanto o diretório raiz de chats
+            chats_dir = os.path.join(self.base_dir, "chats")
+            project_chats_dir = os.path.join(chats_dir, project)
+            
+            # Migrar chat principal se estiver no diretório raiz
+            main_chat_file = f"chat_{project}.json"
+            main_chat_path = os.path.join(chats_dir, main_chat_file)
+            if os.path.exists(main_chat_path):
+                # Criar diretório do projeto se não existir
+                if not os.path.exists(project_chats_dir):
+                    os.makedirs(project_chats_dir)
+                # Mover arquivo
+                new_path = os.path.join(project_chats_dir, main_chat_file)
+                try:
+                    os.rename(main_chat_path, new_path)
+                    console.print(f"[yellow]Migrated {main_chat_file} to project folder[/yellow]")
+                except Exception as e:
+                    console.print(f"[red]Error migrating chat: {str(e)}[/red]")
+            
+            # Listar chats (agora todos estarão na pasta do projeto)
+            chats = []
+            if os.path.exists(project_chats_dir):
+                chats = [os.path.splitext(f)[0] for f in os.listdir(project_chats_dir) if f.endswith('.json')]
+            
+            if not chats:
+                console.print("[yellow]No chats found for this project[/yellow]")
+                return True
+                
+            console.print("\n[bold]Available chats:[/bold]")
+            # Mostrar chat principal primeiro (chat_project ou main)
+            main_chat = f"chat_{project}"
+            if main_chat in chats:
+                console.print(f"- {main_chat} [bold cyan](default)[/bold cyan]")
+                chats.remove(main_chat)
+            elif "main" in chats:
+                console.print(f"- main [bold cyan](default)[/bold cyan]")
+                chats.remove("main")
+            # Mostrar outros chats
+            for chat_name in sorted(chats):
+                console.print(f"- {chat_name}")
             return True
         
         elif command.startswith('/add-folder'):
@@ -642,6 +739,33 @@ Respond with actions to create the implementation."""
             except Exception as e:
                 console.print(f"[red]Unexpected error: {str(e)}[/red]")
             
+            return True
+        
+        elif command.startswith('/remove-chat'):
+            chat_name = command[12:].strip()
+            if not chat_name:
+                console.print("[red]Please provide a chat name[/red]")
+                return True
+                
+            # Não permitir remover chats especiais (chat_project ou main)
+            if chat_name in ['main', f'chat_{project}']:
+                console.print("[red]Cannot remove default chat[/red]")
+                return True
+                
+            # Verificar se o chat existe
+            chats_dir = os.path.join(self.base_dir, "chats", project)
+            chat_file = os.path.join(chats_dir, f"{chat_name}.json")
+            
+            if not os.path.exists(chat_file):
+                console.print(f"[red]Chat '{chat_name}' not found[/red]")
+                return True
+            
+            # Remover arquivo do chat
+            try:
+                os.remove(chat_file)
+                console.print(f"[green]Removed chat: {chat_name}[/green]")
+            except Exception as e:
+                console.print(f"[red]Error removing chat: {str(e)}[/red]")
             return True
         
         return False
