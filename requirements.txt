@@ -2,3 +2,5 @@ google-generativeai==0.3.0
 python-dotenv==1.0.0
 rich==13.7.0
 prompt_toolkit==3.0.43 
+Pillow==10.2.0
+requests==2.31.0 

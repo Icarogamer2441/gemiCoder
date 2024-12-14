@@ -7,8 +7,9 @@ from modules.project_manager import ProjectManager
 from modules.chat_manager import ChatManager
 from modules.file_manager import FileManager
 import json
-import subprocess
-import shlex
+import requests
+from PIL import Image
+from io import BytesIO
 
 # Load environment variables
 load_dotenv()
@@ -103,6 +104,8 @@ class GemiCoder:
 /add-file path  - Add file to active context
 /add-folder [path] - Add all files from folder (current dir if no path)
 /remove-file path - Remove file from active context
+/is-web         - Enable enhanced web development mode
+/add-image path - Add and analyze local image (supports relative/absolute paths)
 /exit           - Exit current project
 
 [bold]Examples:[/bold]
@@ -110,6 +113,9 @@ class GemiCoder:
 /add-file src/main.py
 /add-folder src/utils
 /remove-file config.json
+/is-web         # Enable beautiful web UI generation
+/add-image ../designs/mockup.png
+/add-image C:/Users/MyUser/Desktop/reference.jpg
 """)
             return True
         
@@ -262,6 +268,259 @@ Analyze the project based on the query, considering both structure and file cont
             
             return True
         
+        elif command.startswith('/is-web'):
+            web_prompt = """From now on, when creating web projects or features, always:
+
+1. Use modern and beautiful UI/UX practices:
+   - Clean and professional layouts
+   - Smooth animations and transitions
+   - Intuitive user interactions
+   - Modern color schemes and typography
+   - Proper spacing and visual hierarchy
+
+2. Implement full responsiveness:
+   - Mobile-first approach
+   - Fluid layouts and grids
+   - Responsive images and media
+   - Touch-friendly interactions
+   - Breakpoints for all devices
+
+3. Use modern technologies and best practices:
+   - Latest CSS features (Grid, Flexbox, Custom Properties)
+   - Modern JavaScript/TypeScript
+   - Popular frameworks when appropriate (React, Vue, etc.)
+   - CSS animations and transitions
+   - Performance optimization
+
+4. Include essential features automatically:
+   - Loading states and animations
+   - Error handling and user feedback
+   - Form validation
+   - Accessibility features
+   - Cross-browser compatibility
+
+5. Suggest and implement required backend/infrastructure:
+   - API requirements and structure
+   - Database schemas
+   - Authentication if needed
+   - Performance considerations
+   - Security best practices
+
+Always create a complete, production-ready solution that looks and works beautifully.
+When implementing features, automatically include all necessary UI enhancements and user experience improvements.
+
+Respond with a confirmation if you understand these requirements."""
+
+            try:
+                response = chat.send_message(web_prompt)
+                console.print("\n[bold green]Enhanced web development mode enabled![/bold green]")
+                console.print("The AI will now create beautiful and responsive web interfaces automatically.")
+                return True
+            except Exception as e:
+                console.print(f"[red]Error enabling web mode: {str(e)}[/red]")
+                return True
+        
+        elif command.startswith('/add-image'):
+            image_path = command[10:].strip()
+            if not image_path:
+                console.print("[red]Please provide the image path[/red]")
+                return True
+                
+            try:
+                # Handle relative paths from current directory
+                if not os.path.isabs(image_path):
+                    # Try relative to current directory first
+                    full_path = os.path.abspath(image_path)
+                    if not os.path.exists(full_path):
+                        # If not found, try relative to project directory
+                        full_path = os.path.join(project_dir, image_path)
+                else:
+                    full_path = image_path
+                
+                if not os.path.exists(full_path):
+                    console.print(f"[red]Image not found: {image_path}[/red]")
+                    return True
+                
+                console.print("[bold blue]Reading and analyzing local image...[/bold blue]")
+                
+                # Try to open and encode the image
+                try:
+                    with open(full_path, 'rb') as img_file:
+                        image_bytes = img_file.read()
+                        import base64
+                        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+                        
+                        # Create the content parts with proper structure
+                        content = [
+                            {
+                                "role": "user",
+                                "parts": [
+                                    {
+                                        "inline_data": {
+                                            "mime_type": "image/png",
+                                            "data": image_base64
+                                        }
+                                    },
+                                    {
+                                        "text": """Please analyze this image and describe its visual aspects in detail:
+                                        1. Overall layout and composition
+                                        2. Color scheme and visual style
+                                        3. UI elements and their arrangement (if applicable)
+                                        4. Typography and text styling
+                                        5. Visual patterns and design elements
+                                        6. Spacing and proportions
+                                        7. Any notable animations or interactive elements suggested by the design
+                                        
+                                        Focus on the visual design aspects that could be referenced in development.
+                                        Be detailed but organized in your analysis."""
+                                    }
+                                ]
+                            }
+                        ]
+                except Exception as e:
+                    console.print(f"[red]Error reading image: {str(e)}[/red]")
+                    return True
+                
+                # Get image analysis with retry
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        analysis = model.generate_content(content)
+                        image_description = analysis.text
+                        break
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            console.print(f"[yellow]Retry {attempt + 1}/{max_retries}: Analysis failed, retrying...[/yellow]")
+                            continue
+                        console.print(f"[red]Error analyzing image after {max_retries} attempts: {str(e)}[/red]")
+                        return True
+                
+                console.print("\n[bold]Visual Analysis:[/bold]")
+                console.print(image_description)
+                
+                # Ask user for implementation details
+                console.print("\n[bold blue]What would you like to implement based on this design? (Type your request or 'skip' to continue)[/bold blue]")
+                console.print("[dim]Example: Create a landing page with similar layout and colors[/dim]")
+                user_prompt = Prompt.ask("Your implementation request")
+                
+                if user_prompt.lower() != 'skip':
+                    # Send both image description and user prompt to chat
+                    full_prompt = f"""Visual Reference:
+{image_description}
+
+Implementation Request: {user_prompt}
+
+Based on the visual reference above and the implementation request, please:
+1. Create a detailed plan for implementation
+2. Follow the visual style from the reference
+3. Include all necessary files and code
+4. Add appropriate animations and interactions
+5. Ensure responsive design
+
+Respond with actions to create the implementation."""
+                    
+                    try:
+                        response = chat.send_message(full_prompt)
+                        console.print("\n[bold]Implementation Plan:[/bold]")
+                        console.print(response.text)
+                    except Exception as e:
+                        console.print(f"[red]Error processing request: {str(e)}[/red]")
+                
+            except Exception as e:
+                console.print(f"[red]Unexpected error: {str(e)}[/red]")
+            
+            return True
+        
+        elif command.startswith('/add-local-image'):
+            image_path = command[15:].strip()
+            if not image_path:
+                console.print("[red]Please provide the image path[/red]")
+                return True
+                
+            try:
+                # Convert relative path to absolute if needed
+                if not os.path.isabs(image_path):
+                    image_path = os.path.join(os.getcwd(), image_path)
+                
+                console.print("[bold blue]Reading and analyzing local image...[/bold blue]")
+                
+                # Try to open the image
+                try:
+                    with open(image_path, 'rb') as img_file:
+                        image_data = {
+                            "mime_type": "image/jpeg",  # Adjust based on file type if needed
+                            "data": img_file.read()
+                        }
+                except FileNotFoundError:
+                    console.print(f"[red]Image file not found: {image_path}[/red]")
+                    return True
+                except Exception as e:
+                    console.print(f"[red]Error reading image: {str(e)}[/red]")
+                    return True
+                
+                # Create prompt for image analysis
+                prompt = """Please analyze this image and describe its visual aspects in detail:
+                1. Overall layout and composition
+                2. Color scheme and visual style
+                3. UI elements and their arrangement (if applicable)
+                4. Typography and text styling
+                5. Visual patterns and design elements
+                6. Spacing and proportions
+                7. Any notable animations or interactive elements suggested by the design
+                
+                Focus on the visual design aspects that could be referenced in development.
+                Be detailed but organized in your analysis."""
+                
+                # Get image analysis with retry
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        analysis = model.generate_content([prompt, image_data])
+                        image_description = analysis.text
+                        break
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            console.print(f"[yellow]Retry {attempt + 1}/{max_retries}: Analysis failed, retrying...[/yellow]")
+                            continue
+                        console.print(f"[red]Error analyzing image after {max_retries} attempts: {str(e)}[/red]")
+                        return True
+                
+                console.print("\n[bold]Visual Analysis:[/bold]")
+                console.print(image_description)
+                
+                # Ask user for implementation details
+                console.print("\n[bold blue]What would you like to implement based on this design? (Type your request or 'skip' to continue)[/bold blue]")
+                console.print("[dim]Example: Create a landing page with similar layout and colors[/dim]")
+                user_prompt = Prompt.ask("Your implementation request")
+                
+                if user_prompt.lower() != 'skip':
+                    # Send both image description and user prompt to chat
+                    full_prompt = f"""Visual Reference:
+{image_description}
+
+Implementation Request: {user_prompt}
+
+Based on the visual reference above and the implementation request, please:
+1. Create a detailed plan for implementation
+2. Follow the visual style from the reference
+3. Include all necessary files and code
+4. Add appropriate animations and interactions
+5. Ensure responsive design
+
+Respond with actions to create the implementation."""
+                    
+                    try:
+                        response = chat.send_message(full_prompt)
+                        console.print("\n[bold]Implementation Plan:[/bold]")
+                        console.print(response.text)
+                    except Exception as e:
+                        console.print(f"[red]Error processing request: {str(e)}[/red]")
+                
+            except Exception as e:
+                console.print(f"[red]Unexpected error: {str(e)}[/red]")
+            
+            return True
+        
         return False
 
     def show_persistent_files(self, project):
@@ -292,13 +551,39 @@ Analyze the project based on the query, considering both structure and file cont
             else:
                 action = Prompt.ask(
                     "What would you like to do?",
-                    choices=["open", "create", "exit"]
+                    choices=["open", "create", "delete", "exit"]
                 )
                 
             if action == "exit":
                 break
+                
+            elif action == "delete":
+                project = Prompt.ask("Select project to delete", choices=projects)
+                if Prompt.ask(f"[red]Are you sure you want to delete '{project}'?[/red]", choices=["y", "n"]) == "y":
+                    try:
+                        # Delete project directory
+                        project_dir = os.path.join(projects_dir, project)
+                        import shutil
+                        shutil.rmtree(project_dir)
+                        
+                        # Delete associated chat history
+                        chat_file = os.path.join(self.base_dir, "chats", f"chat_{project}.json")
+                        if os.path.exists(chat_file):
+                            os.remove(chat_file)
+                            
+                        # Remove from persistent files if exists
+                        if project in self.persistent_files:
+                            del self.persistent_files[project]
+                            
+                        console.print(f"[green]Project '{project}' deleted successfully[/green]")
+                        continue
+                    except Exception as e:
+                        console.print(f"[red]Error deleting project: {str(e)}[/red]")
+                        continue
+                else:
+                    continue
             
-            if action == "create":
+            elif action == "create":
                 project_name = Prompt.ask("Enter project name")
                 if project_name in projects:
                     console.print("[red]Project already exists![/red]")

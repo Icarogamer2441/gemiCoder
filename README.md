@@ -42,6 +42,7 @@ python main.py
 2. Main menu options:
 - `open` - Open an existing project
 - `create` - Create a new project
+- `delete` - Delete an existing project
 - `exit` - Exit program
 
 3. Project commands:
@@ -51,6 +52,8 @@ python main.py
 - `/add-file path` - Add file to active context
 - `/add-folder [path]` - Add all files from folder
 - `/remove-file path` - Remove file from active context
+- `/is-web` - Enable enhanced web development mode
+- `/add-image path` - Add and analyze local PNG image (supports relative/absolute paths)
 - `/exit` - Exit current project
 
 4. Examples:
@@ -69,6 +72,17 @@ python main.py
 
 # Remove file from context
 /remove-file config.json
+
+# Enable beautiful web UI generation
+/is-web
+
+# Analyze image from local path
+# Note: Only PNG images are supported
+/add-image ../designs/mockup.png    # Relative path
+/add-image C:/designs/reference.png # Absolute path
+
+# Exit current project
+/exit
 ```
 
 5. Natural language commands:
@@ -78,6 +92,11 @@ Create a Python class for user authentication
 
 # Modify existing files
 Add error handling to the login function
+
+# Create web interfaces (after /is-web)
+Create a login page with animations
+Create a responsive dashboard
+Add a contact form with validation
 
 # Run terminal commands
 Run the tests for the auth module
