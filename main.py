@@ -1157,22 +1157,76 @@ User request: {prompt}"""
     def execute_action(self, action, chat):
         try:
             if action['action_type'] == 'create':
+                # Validar se o path está vazio ou None
+                if not action.get('path') or action['path'].strip() == '':
+                    console.print("[red]Error: Invalid or empty file path[/red]")
+                    console.print(f"[yellow]Debug - Received path: '{action.get('path')}'[/yellow]")
+                    return
+                
+                # Normalizar o path para evitar problemas com barras
+                action['path'] = os.path.normpath(action['path'].strip())
+                
+                # Validar se o conteúdo existe
+                if 'content' not in action or action['content'] is None:
+                    console.print("[red]Error: No content provided for file[/red]")
+                    return
+                
+                # Criar diretórios necessários
+                file_dir = os.path.dirname(action['path'])
+                if file_dir and not os.path.exists(file_dir):
+                    try:
+                        os.makedirs(file_dir)
+                    except Exception as e:
+                        console.print(f"[red]Error creating directory {file_dir}: {str(e)}[/red]")
+                        return
+                
                 if Prompt.ask(f"Create {action['path']}?", choices=["y", "n"]) == "y":
-                    self.file_manager.create_file(action['path'], action['content'])
+                    try:
+                        with open(action['path'], 'w', encoding='utf-8') as f:
+                            f.write(action['content'])
+                        console.print(f"[green]Created {action['path']}[/green]")
+                    except Exception as e:
+                        console.print(f"[red]Error creating file {action['path']}: {str(e)}[/red]")
+                        console.print(f"[yellow]Debug - Path: '{action['path']}'[/yellow]")
+                        console.print(f"[yellow]Debug - Content length: {len(action['content'])}[/yellow]")
                     
             elif action['action_type'] == 'edit':
+                # Validar se o path está vazio
+                if not action.get('path'):
+                    console.print("[red]Error: Empty file path provided[/red]")
+                    return
+                
                 if Prompt.ask(f"Edit {action['path']}?", choices=["y", "n"]) == "y":
                     self.file_manager.edit_file(action['path'], action['content'])
                     
             elif action['action_type'] == 'move':
+                # Validar paths
+                if not action.get('path') or not action.get('content'):
+                    console.print("[red]Error: Source or destination path is empty[/red]")
+                    return
+                
                 if Prompt.ask(f"Move {action['path']} to {action['content']}?", choices=["y", "n"]) == "y":
+                    # Criar diretório de destino se necessário
+                    dest_dir = os.path.dirname(action['content'])
+                    if dest_dir and not os.path.exists(dest_dir):
+                        os.makedirs(dest_dir)
                     os.rename(action['path'], action['content'])
                     
             elif action['action_type'] == 'remove':
+                # Validar se o path está vazio
+                if not action.get('path'):
+                    console.print("[red]Error: Empty file path provided[/red]")
+                    return
+                
                 if Prompt.ask(f"Remove {action['path']}?", choices=["y", "n"]) == "y":
                     self.file_manager.delete_file(action['path'])
                     
             elif action['action_type'] == 'terminal':
+                # Validar se o comando está vazio
+                if not action.get('content'):
+                    console.print("[red]Error: Empty terminal command[/red]")
+                    return
+                
                 if Prompt.ask(f"Run command: {action['content']}?", choices=["y", "n"]) == "y":
                     try:
                         import signal
