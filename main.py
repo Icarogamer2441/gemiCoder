@@ -129,7 +129,7 @@ class GemiCoder:
         chat = model.start_chat(history=chat_history)
         return chat, chat_file
 
-    def process_custom_command(self, command, project_dir, chat, project):
+    def process_custom_command(self, command, project_dir, chat, project, chat_file=None):
         """Processa comandos customizados começando com /"""
         if command.startswith('/help'):
             console.print("\n[bold]Available commands:[/bold]")
@@ -147,6 +147,8 @@ class GemiCoder:
 /remove-chat name - Remove a chat session
 /chat-list      - List all available chats
 /exit           - Exit current project
+/plan           - Create and execute a project iteration plan
+/plan-mode      - Enable automatic iteration planning for all requests
 
 [bold]Examples:[/bold]
 /codebase find security issues
@@ -158,6 +160,7 @@ class GemiCoder:
 /new-chat feature-auth
 /open-chat feature-ui
 /remove-chat old-feature
+/plan
 """)
             return True
             
@@ -780,6 +783,172 @@ Respond with actions to create the implementation."""
                 console.print(f"[red]Error removing chat: {str(e)}[/red]")
             return True
         
+        elif command.startswith('/plan'):
+            project_query = command[6:].strip()
+            try:
+                # Modificar o prompt para enfatizar o uso do diretório raiz
+                planning_prompt = f"""Create an iteration plan for the project.
+{f'Project requirements: {project_query}' if project_query else 'Analyze the current project state and create a plan for completion.'}
+
+Rules for the plan:
+1. Each iteration must have maximum 4 steps
+2. Each step should be clear and achievable
+3. Steps should be in logical order
+4. Each iteration should have a clear goal
+5. Consider dependencies between steps
+6. Include testing and validation when needed
+7. IMPORTANT: All files and directories must be created in the root directory '.'
+   - DO NOT create a new project directory inside the project
+   - Use relative paths starting with './' or just the filename
+   - Example: './src/App.js' or 'package.json', not 'my-app/src/App.js'
+   - All commands should run in the current directory
+   - For npm/yarn init, use the current directory
+
+Format your response as:
+```plan
+Iteration 1: [Goal Description]
+1. [Step 1]
+2. [Step 2]
+3. [Step 3]
+4. [Step 4]
+
+Iteration 2: [Goal Description]
+1. [Step 1]
+...
+```
+
+Then explain why you chose this order and any important considerations.
+
+Remember: All files and commands must work in the current directory '.' - DO NOT create a new project directory!"""
+
+                response = chat.send_message(planning_prompt)
+                plan_text = response.text
+                
+                # Extrair o plano entre ```plan e ```
+                import re
+                plan_match = re.search(r'```plan\n(.*?)\n```', plan_text, re.DOTALL)
+                if not plan_match:
+                    console.print("[red]Could not parse the plan format[/red]")
+                    return True
+                    
+                plan = plan_match.group(1)
+                
+                # Mostrar o plano e a explicação
+                console.print("\n[bold blue]Project Iteration Plan:[/bold blue]")
+                console.print(plan)
+                
+                # Mostrar explicação (texto após o bloco do plano)
+                explanation = plan_text.split('```')[-1].strip()
+                if explanation:
+                    console.print("\n[bold]Plan Explanation:[/bold]")
+                    console.print(explanation)
+                
+                # Perguntar se quer começar as iterações
+                if Prompt.ask("\nStart executing iterations?", choices=["y", "n"]) == "y":
+                    # Separar iterações
+                    iterations = re.findall(r'Iteration \d+:.*?(?=\nIteration \d+:|$)', plan, re.DOTALL)
+                    
+                    for i, iteration in enumerate(iterations, 1):
+                        console.print(f"\n[bold blue]Starting Iteration {i}[/bold blue]")
+                        console.print(iteration.strip())
+                        
+                        if i > 1 and Prompt.ask("\nContinue to next iteration?", choices=["y", "n"]) != "y":
+                            break
+                        
+                        # Extrair os passos da iteração
+                        steps = re.findall(r'\d+\.\s*(.*?)(?=\n\d+\.|$)', iteration, re.DOTALL)
+                        
+                        for j, step in enumerate(steps, 1):
+                            console.print(f"\n[bold]Step {j}:[/bold] {step.strip()}")
+                            
+                            # Criar prompt para executar o passo
+                            step_prompt = f"""Current Iteration: {i}
+Current Step: {j} - {step.strip()}
+
+Based on this step, please:
+1. Analyze what needs to be done
+2. Generate necessary actions (file creation, modifications, terminal commands)
+3. Ensure all changes are properly tested
+4. Consider dependencies from previous steps
+
+Respond with specific actions to implement this step."""
+
+                            if Prompt.ask(f"\nExecute step {j}?", choices=["y", "n"]) == "y":
+                                try:
+                                    response = chat.send_message(step_prompt)
+                                    text = response.text.strip()
+                                    
+                                    # Procurar por ações JSON na resposta
+                                    start = text.find('[')
+                                    end = text.rfind(']') + 1
+                                    
+                                    if start != -1 and end != 0:
+                                        actions = json.loads(text[start:end])
+                                        
+                                        # Mostrar e confirmar ações
+                                        console.print("\n[bold]Proposed actions:[/bold]")
+                                        for action in actions:
+                                            console.print(f"\n- {action['description']}")
+                                            if action['action_type'] == 'terminal':
+                                                console.print(f"  Command: {action['content']}")
+                                        
+                                        if Prompt.ask("\nProceed with these actions?", choices=["y", "n"]) == "y":
+                                            for action in actions:
+                                                self.execute_action(action, chat)
+                                    else:
+                                        console.print("\n[bold]AI Response:[/bold]")
+                                        console.print(text)
+                                    
+                                except Exception as e:
+                                    console.print(f"[red]Error in step {j}: {str(e)}[/red]")
+                                    if Prompt.ask("Continue to next step?", choices=["y", "n"]) != "y":
+                                        break
+                            
+                            # Salvar histórico após cada passo
+                            if chat_file:
+                                self.save_chat_history(chat, chat_file)
+                        
+                    console.print("\n[bold green]Project plan execution completed![/bold green]")
+                
+            except Exception as e:
+                console.print(f"[red]Error creating/executing plan: {str(e)}[/red]")
+            return True
+        
+        elif command.startswith('/plan-mode'):
+            try:
+                plan_mode_prompt = """From now on, I will automatically create and follow iteration plans for all project requests.
+Each request will be broken down into iterations following these rules:
+
+1. Each iteration must have maximum 4 steps
+2. Each step should be clear and achievable
+3. Steps should be in logical order
+4. Each iteration should have a clear goal
+5. Consider dependencies between steps
+6. Include testing and validation when needed
+7. IMPORTANT: All files and directories must be created in the root directory '.'
+   - DO NOT create a new project directory inside the project
+   - Use relative paths starting with './' or just the filename
+   - Example: './src/App.js' or 'package.json', not 'my-app/src/App.js'
+   - All commands should run in the current directory
+   - For npm/yarn init, use the current directory
+
+For every request, I will:
+1. Create a plan in the specified format
+2. Execute each iteration step by step
+3. Validate each step before moving to the next
+4. Keep all files in the root project directory
+
+Respond with 'PLAN_MODE_ENABLED' if you understand."""
+
+                response = chat.send_message(plan_mode_prompt)
+                if "PLAN_MODE_ENABLED" in response.text:
+                    console.print("[bold green]Plan mode enabled! All requests will now follow iteration plans automatically.[/bold green]")
+                else:
+                    console.print("[red]Error enabling plan mode[/red]")
+            except Exception as e:
+                console.print(f"[red]Error enabling plan mode: {str(e)}[/red]")
+            return True
+        
         return False
 
     def show_persistent_files(self, project):
@@ -914,7 +1083,7 @@ Respond with actions to create the implementation."""
                         break
                     
                     if prompt.startswith('/'):
-                        if self.process_custom_command(prompt, project_dir, chat, project):
+                        if self.process_custom_command(prompt, project_dir, chat, project, chat_file):
                             continue
                     
                     try:
@@ -947,69 +1116,40 @@ User request: {prompt}"""
                         
                         text = response.text.strip()
                         
-                        # Procurar por JSON na resposta
+                        # Procurar por ações JSON na resposta
                         start = text.find('[')
                         end = text.rfind(']') + 1
                         
-                        if start == -1 or end == 0:
+                        if start != -1 and end != 0:
+                            try:
+                                actions = json.loads(text[start:end])
+                                
+                                # Mostrar e confirmar ações
+                                console.print("\n[bold]Proposed actions:[/bold]")
+                                for action in actions:
+                                    console.print(f"\n- {action['description']}")
+                                    if action['action_type'] == 'terminal':
+                                        console.print(f"  Command: {action['content']}")
+                                
+                                if Prompt.ask("\nProceed with these actions?", choices=["y", "n"]) == "y":
+                                    for action in actions:
+                                        self.execute_action(action, chat)
+                            except json.JSONDecodeError:
+                                # Se não conseguir decodificar como JSON, mostrar resposta normal
+                                console.print("\n[bold]AI Response:[/bold]")
+                                console.print(text)
+                        else:
+                            # Se não encontrar ações JSON, mostrar resposta normal
                             console.print("\n[bold]AI Response:[/bold]")
                             console.print(text)
-                            continue
-                        
-                        actions = json.loads(text[start:end])
-                        
-                        # Corrigir: Não duplicar o caminho do projeto
-                        for action in actions:
-                            if 'path' in action:
-                                # Verificar se o caminho já inclui o diretório do projeto
-                                if not action['path'].startswith(project_dir):
-                                    action['path'] = os.path.join(project_dir, action['path'])
-                            if action['action_type'] == 'move':
-                                if not action['content'].startswith(project_dir):
-                                    action['content'] = os.path.join(project_dir, action['content'])
-                        
-                        # Mostrar e confirmar ações
-                        console.print("\n[bold]Proposed actions:[/bold]")
-                        for action in actions:
-                            console.print(f"\n- {action['description']}")
-                            if action['action_type'] == 'terminal':
-                                console.print(f"  Command: {action['content']}")
-                        
-                        if Prompt.ask("\nProceed with these actions?", choices=["y", "n"]) == "y":
-                            for action in actions:
-                                self.execute_action(action, chat)
-                                # Se for uma ação de leitura, esperar por instruções adicionais
-                                if action['action_type'] == 'read':
-                                    next_step = Prompt.ask("\nWhat would you like to do next?")
-                                    if next_step.lower() != 'exit':
-                                        response = chat.send_message(next_step)
-                                        text = response.text.strip()
-                                        
-                                        # Procurar por novas ações no formato JSON
-                                        start = text.find('[')
-                                        end = text.rfind(']') + 1
-                                        
-                                        if start != -1 and end != 0:
-                                            new_actions = json.loads(text[start:end])
-                                            console.print("\n[bold]Additional actions proposed:[/bold]")
-                                            for new_action in new_actions:
-                                                console.print(f"\n- {new_action['description']}")
-                                                if new_action['action_type'] == 'terminal':
-                                                    console.print(f"  Command: {new_action['content']}")
-                                            
-                                            if Prompt.ask("\nProceed with these actions?", choices=["y", "n"]) == "y":
-                                                for new_action in new_actions:
-                                                    self.execute_action(new_action, chat)
-                                        else:
-                                            console.print("\n[bold]AI Response:[/bold]")
-                                            console.print(text)
                         
                         # Salvar histórico do chat
-                        self.save_chat_history(chat, chat_file)
-                    
+                        if chat_file:
+                            self.save_chat_history(chat, chat_file)
+                        
                     except Exception as e:
                         console.print(f"[red]Error: {str(e)}[/red]")
-            
+                
             finally:
                 # Restore original directory when exiting project
                 os.chdir(original_dir)

@@ -10,6 +10,7 @@ An AI-powered project generator and manager using Google's Gemini AI.
 - Terminal-based interface
 - Persistent file context for better AI understanding
 - Smart codebase analysis
+- Manual project planning with iterations
 
 ## Requirements
 - Python 3.8+
@@ -58,9 +59,31 @@ python main.py
 - `/open-chat name` - Open an existing chat session
 - `/chat-list` - List all available chats
 - `/remove-chat name` - Remove a chat session (cannot remove default chat)
+- `/plan` - Create and execute a project iteration plan
 - `/exit` - Exit current project or chat
 
-4. Examples:
+4. Planning Features:
+```bash
+# Create an iteration plan for your project
+/plan create a react blog
+
+# The plan will break down the project into:
+- Logical iterations
+- Maximum 4 steps per iteration
+- Clear goals and dependencies
+- Testing and validation steps
+```
+
+The planning system:
+- Breaks down requests into logical iterations
+- Maximum 4 steps per iteration
+- Creates files in the root project directory
+- Validates each step before proceeding
+- Maintains proper dependencies between steps
+- Includes testing and validation
+- Prevents nested project creation
+
+5. Examples:
 ```bash
 # Add single file to context
 /add-file src/main.py
@@ -86,6 +109,9 @@ python main.py
 /chat-list             # See all available chats
 /remove-chat old-chat  # Remove a chat session
 
+# Create project with planning
+/plan create a new express api  # Create plan with iterations
+
 # Analyze image from local path
 # Note: Only PNG images are supported
 /add-image ../designs/mockup.png    # Relative path
@@ -95,7 +121,7 @@ python main.py
 exit
 ```
 
-5. Natural language commands:
+6. Natural language commands:
 ```bash
 # Create new files
 Create a Python class for user authentication
@@ -128,6 +154,8 @@ gemiCoder/
 - Chat history is saved per project
 - Files added to context persist between sessions
 - Binary files are automatically ignored
+- Planning mode creates files in project root
+- Each iteration is validated before proceeding
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
